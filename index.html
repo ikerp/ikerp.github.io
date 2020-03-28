@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            .bordered {
+                outline: rgb(136, 136, 136) 1px solid;
+            }
+            
+            .marcador {
+                font-weight: bold;
+                font-size: 20px;
+            }
+
+            .defaultText {
+                color: rgb(136, 136, 136)
+            }
+
+            #textTotal {
+                color: rgb(136, 136, 136)
+            }
+
+            #textInfectados {
+                color: red
+            }
+
+            #textCurados {
+                color: rgb(60, 172, 11)
+            }
+
+            .inline {
+                display:inline-block;
+                vertical-align:top;
+            }
+
+            input {
+                margin-top:15px;
+                font-family: Arial, Helvetica, sans-serif;
+            }
+
+            .numeric {
+                width: 30px;
+                margin-left: 10px;
+                margin-right: 20px;
+                text-align: right;
+            }
+
+            label {
+                font-family: Arial, Helvetica, sans-serif;
+            }
+        </style>
+    </head>
+
+    <body>
+        <div style="text-align:center;margin-top:25px">
+            <canvas class="bordered" id="canvasSim"></canvas>
+            <div class="inline bordered" style="text-align:right;width:240px;height:275px" id="panelSim">
+                <label class="defaultText">Población</label><input class="numeric" id="inputPoblacion" type="text" value="100"/><br>
+                <label class="defaultText">Movilidad restringida</label><input id="inputMovilidad" class="numeric" type="text" value="20"/><br>
+                <label class="defaultText">Tiempo incubación</label><input id="inputIncubacion" class="numeric" type="text" value="10" /><br>
+                <label class="defaultText">Tasa mortalidad</label><input id="inputMortalidad" class="numeric" type="text" value="2"/><br>
+                <div style="text-align: center;margin-top:30px">
+                    <input type="submit" id="btnSimular" value="Simular" />
+                </div>
+            </div>
+        </div>
+        <div style="text-align:center">
+            <canvas class="bordered" id="canvasGraf"></canvas>
+            <div class="inline" style="width:84px;margin-top:3px">
+                <div>
+                    <label class="marcador" id="textTotal">0</label>
+                </div>
+                <div>
+                    <label class="marcador"id="textInfectados">0</label>
+                </div>
+                <div>
+                    <label class="marcador"id="textCurados">0</label>
+                </div>
+                <div>
+                    <label class="marcador"id="textMuertos">0</label>
+                </div>
+            </div>
+            <div class="inline" style="width:150px"></div>
+        </div>
+        
+        <script type = "text/javascript">
+
+            const canvasSim = document.querySelector('#canvasSim');
+            const ctxSim = canvasSim.getContext('2d');
+
+            const canvasGraf = document.querySelector('#canvasGraf');
+            const ctxGraf = canvasGraf.getContext('2d');
+
+            const textTotal = document.querySelector('#textTotal');
+            const textInfectados = document.querySelector('#textInfectados');
+            const textCurados = document.querySelector('#textCurados');
+            const textMuertos = document.querySelector('#textMuertos');
+
+            const inputPoblacion = document.querySelector('#inputPoblacion');
+            const inputMovilidad = document.querySelector('#inputMovilidad');
+            const inputIncubacion = document.querySelector('#inputIncubacion');
+            const inputMortalidad = document.querySelector('#inputMortalidad');
+            const btnSimular = document.querySelector('#btnSimular');
+
+            let animationFrameId;
+            let currentSimulation;
+
+            btnSimular.onclick = function() {
+                // detenemos loop
+                if (animationFrameId) {
+                    window.cancelAnimationFrame(animationFrameId);
+                    animationFrameId = undefined;
+                }
+                currentSimulation = new Simulacion(
+                    inputPoblacion.value,
+                    inputMovilidad.value,
+                    inputIncubacion.value,
+                    inputMortalidad.value / 100
+                );
+                loop();
+            }
+
+            const height = 600;
+            const width = 600;
+
+            const radio = 6;
+            const vel = 1;
+
+            canvasSim.width = width;
+            canvasSim.height = height;
+
+            canvasGraf.width = width;
+            canvasGraf.height = 100;
+
+            const estados = {
+                    INICIAL: 'inicial',
+                    INFECTADO: 'infectado',
+                    CURADO: 'curado',
+                    MUERTO: 'muerto'
+            }
+
+            const getRandomInt = function(min, max) {
+                return Math.floor(Math.random() * (max - min)) + min;
+            }
+
+            const tita = function(x, y) {
+                const arc = Math.atan(y / x);
+                return x < 0 ? arc + Math.PI : arc;
+            }
+        
+            const posicionValida = function(simulacion) {
+                let x, y;
+                let valida = false;
+                while (!valida) {
+                    x = getRandomInt(radio + 1, width - radio);
+                    y = getRandomInt(radio + 1, height - radio);
+                    valida = true;
+                    for (let i = 0; i < simulacion.puntos.length; i++) {
+                        const dx = x - simulacion.puntos[i].x;
+                        const dy = y - simulacion.puntos[i].y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        if (distance < 3 * radio) valida = false;
+                    }
+                }
+                return [x,y];
+            }
+
+            const Punto = function(simulacion) {
+                this.simulacion = simulacion;
+
+                [this.x, this.y] = posicionValida(this.simulacion);
+
+                this.velX = Math.random() * 2 * vel - vel;
+
+                this.velY = Math.sqrt(vel * vel -  this.velX * this.velX);
+                const plusOrMinus = Math.random() < 0.5 ? -1 : 1;
+                this.velY *= plusOrMinus;
+
+                this.estado = estados.INICIAL;
+                this.tContagio = 0;
+
+                this.estatico = false;
+            }
+
+            Punto.prototype.draw = function() {
+                ctxSim.beginPath();
+                switch(this.estado) {
+                    case estados.INICIAL:
+                        ctxSim.fillStyle = '#888888';
+                        break;
+                    case estados.INFECTADO:
+                        ctxSim.fillStyle = '#ff0000';
+                        break;
+                    case estados.CURADO:
+                        ctxSim.fillStyle = '#3CAC0B';
+                        break;
+                    case estados.MUERTO:
+                        ctxSim.fillStyle = '#000000';
+                        break;
+                }
+
+                ctxSim.arc(this.x, this.y, radio, 0, 2 * Math.PI);
+                ctxSim.fill();
+            }
+
+            Punto.prototype.update = function() {
+                if ((this.x + radio) >= width) this.velX = -(this.velX);
+                if ((this.x - radio) <= 0) this.velX = -(this.velX);
+                if ((this.y + radio) >= height) this.velY = -(this.velY);
+                if ((this.y - radio) <= 0) this.velY = -(this.velY);
+                this.x += this.velX;
+                this.y += this.velY;
+
+                const ahora = Date.now();
+                if (this.estado === estados.INFECTADO) {
+                    if (ahora - this.tContagio > this.simulacion.tIncubacion * 1000) {
+                        if (Math.random() < this.simulacion.tasaMortalidad) {
+                            this.estado = estados.MUERTO;
+                            this.confinar();
+                            this.simulacion.infectados--;
+                            this.simulacion.muertos++;
+                        }
+                        else {
+                            this.estado = estados.CURADO;
+                            this.simulacion.infectados--;
+                            this.simulacion.curados++;
+                        }
+                    }
+                }
+            }
+
+            Punto.prototype.infectar = function() {
+                if (this.estado === estados.INICIAL) {
+                    this.estado = estados.INFECTADO;
+                    this.tContagio = Date.now();
+                    this.simulacion.infectados++;
+                    this.simulacion.poblacion--;
+                }
+            }
+
+            Punto.prototype.confinar = function() {
+                this.velX = 0;
+                this.velY = 0;
+                this.estatico = true;
+            }
+
+            Punto.prototype.collisionDetect = function() {
+                let puntos = this.simulacion.puntos;
+                for (let i = 0; i < puntos.length; i++) {
+                    if (!(puntos[i].x === this.x && puntos[i].y === this.y)) {
+                        const dx = this.x - puntos[i].x;
+                        const dy = this.y - puntos[i].y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+
+                        const velRelX = puntos[i].velX - this.velX;
+                        const velRelY = puntos[i].velY - this.velY;
+                        const nX = puntos[i].x - this.x;
+                        const nY = puntos[i].y - this.y;
+                        const prodEsc = velRelX * nX + velRelY * nY;
+
+                        if (distance < 2 * radio && prodEsc < 0) {
+                            if (this.estado === estados.INFECTADO || puntos[i].estado === estados.INFECTADO) {
+                                this.infectar();
+                                puntos[i].infectar();
+                            }
+
+                            const v1 = Math.sqrt(this.velX * this.velX + this.velY * this.velY);
+                            const v2 = Math.sqrt(puntos[i].velX * puntos[i].velX + puntos[i].velY * puntos[i].velY);
+
+                            const phi = Math.atan((this.y - puntos[i].y) / (this.x - puntos[i].x));
+
+                            if (!this.estatico && !puntos[i].estatico) {
+                                // 1 es this y 2 es contra el que colisiona
+                                const tita1 = tita(this.velX, this.velY);
+                                const tita2 = tita(puntos[i].velX, puntos[i].velY);
+
+                                this.velX = v2 * Math.cos(tita2 - phi) * Math.cos(phi) + v1 * Math.sin(tita1 - phi) * Math.cos(phi + (Math.PI / 2))
+                                this.velY = v2 * Math.cos(tita2 - phi) * Math.sin(phi) + v1 * Math.sin(tita1 - phi) * Math.sin(phi + (Math.PI / 2))
+
+                                puntos[i].velX = v1 * Math.cos(tita1 - phi) * Math.cos(phi) + v2 * Math.sin(tita2 - phi) * Math.cos(phi + (Math.PI / 2))
+                                puntos[i].velY = v1 * Math.cos(tita1 - phi) * Math.sin(phi) + v2 * Math.sin(tita2 - phi) * Math.sin(phi + (Math.PI / 2))
+                            }
+                            else if (this.estatico) {
+                                puntos[i].velX = v2 * Math.cos(phi);
+                                puntos[i].velY = v2 * Math.sin(phi);
+                            }
+                            else {
+                                this.velX = - v1 * Math.cos(phi);
+                                this.velY = - v1 * Math.sin(phi);
+                            }
+                        }
+                    }
+                }
+            }
+
+            const Simulacion = function(poblacion, confinados, tIncubacion, tasaMortalidad) {
+
+                this.poblacion = poblacion;
+                this.confinados = confinados;
+                this.tIncubacion = tIncubacion;
+                this.tasaMortalidad = tasaMortalidad;
+
+                this.infectados = 0;
+                this.curados = 0;
+                this.muertos = 0;
+
+                this.puntos = [];
+                for (let i = 0; i < this.poblacion; i++) { 
+                    this.puntos.push(new Punto(this));
+                }
+                for (let i = 0; i < this.confinados; i++) {
+                    this.puntos[i].confinar();
+                }          
+                this.puntos[this.confinados].infectar();
+
+                this.t = Date.now();
+                this.grafIndex = 0;
+
+                ctxGraf.fillStyle = '#ffffff';
+                ctxGraf.fillRect(0, 0, width, 100);
+            }
+
+            function loop() {
+                ctxSim.fillStyle = '#ffffff';
+                ctxSim.fillRect(0, 0, width, height);
+
+                for (let i = 0; i < currentSimulation.puntos.length; i++) {
+                    currentSimulation.puntos[i].update();
+                    currentSimulation.puntos[i].collisionDetect();
+                    currentSimulation.puntos[i].draw();
+                }
+
+                textTotal.innerHTML = currentSimulation.poblacion; 
+                textInfectados.innerHTML = currentSimulation.infectados;
+                textCurados.innerHTML = currentSimulation.curados;
+                textMuertos.innerHTML = currentSimulation.muertos;
+                
+                if (Date.now() - currentSimulation.t > 50) {
+                    ctxGraf.beginPath(); 
+                    ctxGraf.moveTo(currentSimulation.grafIndex, 100);
+                    ctxGraf.lineTo(currentSimulation.grafIndex, 100 - currentSimulation.infectados);
+                    ctxGraf.strokeStyle = '#ff0000';
+                    ctxGraf.stroke();
+
+                    ctxGraf.beginPath(); 
+                    ctxGraf.moveTo(currentSimulation.grafIndex, 0);
+                    ctxGraf.lineTo(currentSimulation.grafIndex, currentSimulation.curados);
+                    ctxGraf.strokeStyle = '#3CAC0B';
+                    ctxGraf.stroke();
+                        
+                    currentSimulation.t = Date.now();
+                    currentSimulation.grafIndex++;
+                }
+
+                animationFrameId = window.requestAnimationFrame(loop);
+            }
+
+            currentSimulation = new Simulacion(
+                    inputPoblacion.value,
+                    inputMovilidad.value,
+                    inputIncubacion.value,
+                    inputMortalidad.value / 100
+                );
+            loop();
+        </script>
+
+    </body>
+</html>
