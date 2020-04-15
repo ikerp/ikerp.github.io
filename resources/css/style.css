@@ -1,0 +1,33 @@
+.bordered {
+    outline: rgb(136, 136, 136) 1px solid;
+}
+
+.marcador {
+    font-weight: bold;
+    font-size: 20px;
+}
+
+.inline {
+    display:inline-block;
+    vertical-align:top;
+}
+
+input {
+    margin-top:15px;
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+.numeric {
+    width: 30px;
+    margin-left: 10px;
+    margin-right: 20px;
+    text-align: right;
+}
+
+label {
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+.lightText {
+    color:rgb(190, 190, 190)
+}
